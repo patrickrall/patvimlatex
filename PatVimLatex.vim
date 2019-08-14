@@ -116,12 +116,7 @@ function! PVLCompilePDF()
     " Check for bibtex and recompile
     if filereadable(PVLBibFile())
         call system("cp " . PVLBibFile() . " " . PVLBibTmpFile())
-       
-        let tmp = system("pwd")
-        call system("cd " . b:tmpdir)
-        call system("bibtex " . b:texfilename)
-        call system("cd " . tmp)
-
+        call system("cd " . b:tmpdir . "; bibtex " . b:texfilename)
         silent! call system(compilecommand)
     endif
 
