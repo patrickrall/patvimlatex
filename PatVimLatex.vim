@@ -47,6 +47,17 @@ function! PVLPdfFile()
     return b:tmpdir . "/" . b:texfilename . ".pdf"
 endfunction
 
+function! PVLPyTexFile()
+    return b:tmpdir . "/" . b:texfilename . ".pytxcode"
+endfunction
+
+function! PVLBibFile()
+    return substitute(expand("%:t"), '\.tex$', "\.bib", "")
+endfunction
+
+function! PVLBibTmpFile()
+    return b:tmpdir . "/" . b:texfilename . ".bib"
+endfunction
 
 " Compile PDF
 function! PVLCompilePDF()
@@ -94,11 +105,24 @@ function! PVLCompilePDF()
         return 0
     endif
 
+
     " Verify if pdf output was generated
     if !filereadable(PVLPdfFile())
         call PVLErrorMessage("pdflatex generated no pdf file")
         call PVLCountErrorsAndWarnings()
         return 0
+    endif
+
+    " Check for bibtex and recompile
+    if filereadable(PVLBibFile())
+        call system("cp " . PVLBibFile() . " " . PVLBibTmpFile())
+       
+        let tmp = system("pwd")
+        call system("cd " . b:tmpdir)
+        call system("bibtex " . b:texfilename)
+        call system("cd " . tmp)
+
+        silent! call system(compilecommand)
     endif
 
     if !PVLCheckCrossreferencesWarning()
@@ -112,6 +136,20 @@ function! PVLExportPDF()
    if filereadable(PVLPdfFile())
         silent! call system("cp \"" . PVLPdfFile() . "\" \"" . expand("%:h") . "\"")
         call PVLMessage("Exported pdf to " . expand("%:p:h") . "/" . b:texfilename . ".pdf")
+    else
+        call PVLErrorMessage("No pdf file to export")
+    endif
+endfunction
+
+
+" Export function to current directory
+function! PVLUploadPDF()
+   if filereadable(PVLPdfFile())
+       call inputsave()
+       let dest = input('Enter destination: ')
+       call inputrestore()
+       call system("scp \"" . PVLPdfFile() . "\" \"" . dest . "/" . b:texfilename . ".pdf\"")
+       call PVLMessage("Exported pdf to " . dest . "/" . b:texfilename . ".pdf")
     else
         call PVLErrorMessage("No pdf file to export")
     endif
@@ -154,7 +192,7 @@ function! PVLCountErrorsAndWarnings(...)
         let warningsplural = "" 
     endif
 
-    if errors == "0" && warnings == "0" && errmessages == "0"
+    if errors == "0" && (warnings == "0" ||  b:silence_warnings ) && errmessages == "0"
         " if we have no quiet argument, display message of no errors
         if a:0 == 0
              call PVLMessage("Found no line errors, error messages or warnings in log file")
@@ -410,11 +448,24 @@ function! PVLUpdate()
         endif
         return
     endif
+
+    " perform python code if a .pytexcode file was generated and execute it
+    if filereadable(PVLPyTexFile())
+        let pyoutput =  system("/usr/share/texmf-dist/scripts/pythontex/pythontex.py \'" . b:tmpdir . "/" . b:texfilename . ".tex\'")
+        if pyoutput !~ "0 error(s), 0 warning(s)"
+            call PVLMessage(pyoutput)
+        else
+            call PVLCompilePDF()
+        endif
+    endif
+
+
     if PVLCheckViewerStatus() == 1
         call system("xdotool key --window " . b:windowid . " r &> /dev/null")
     endif
     call PVLCheckViewerStatus()
 endfunction
+
 
 
 " synctex integration
@@ -528,9 +579,12 @@ call PVLInitGlobals()
 if !exists("no_plugin_maps") && !exists("no_tex_maps")
     " default keybindings
 
+    let b:silence_warnings = 1
+
     nnoremap <silent> <buffer> <LocalLeader>q :call PVLToggleViewer()<CR>
     nnoremap <silent> <buffer> <LocalLeader>r :call PVLUpdate()<CR>
     nnoremap <silent> <buffer> <LocalLeader>x :call PVLExportPDF()<CR>
+    nnoremap <silent> <buffer> <LocalLeader>z :call PVLUploadPDF()<CR>
     nnoremap <silent> <buffer> <LocalLeader>p :call PVLPrint()<CR>
 
     nnoremap <silent> <buffer> <LocalLeader>l :call PVLViewLogFile()<CR>
